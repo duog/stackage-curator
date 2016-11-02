@@ -7,11 +7,9 @@
 module Stackage.CompleteBuild
     ( BuildFlags (..)
     , checkPlan
-    , getStackageAuthToken
     , createPlan
     , fetch
     , makeBundle
-    , upload
     , hackageDistro
     , uploadGithub
     , uploadDocs'
@@ -164,109 +162,6 @@ checkPlan mfp = stillAlive $ do
 
     putStrLn "Plan seems valid!"
 
-{- FIXME remove
-getPerformBuild :: BuildFlags -> Settings -> IO PerformBuild
-getPerformBuild buildFlags Settings {..} = do
-    jobs <- maybe getNumCapabilities return $ bfJobs buildFlags
-    return PerformBuild
-        { pbPlan = plan
-        , pbInstallDest = buildDir
-        , pbLogDir = logDir
-        , pbLog = hPut stdout
-        , pbJobs = jobs
-        , pbGlobalInstall = False
-        , pbEnableTests = bfEnableTests buildFlags
-        , pbEnableHaddock = bfEnableHaddock buildFlags
-        , pbEnableLibProfiling = bfEnableLibProfile buildFlags
-        , pbEnableExecDyn = bfEnableExecDyn buildFlags
-        , pbVerbose = bfVerbose buildFlags
-        , pbAllowNewer = bfSkipCheck buildFlags
-        , pbBuildHoogle = bfBuildHoogle buildFlags
-        }
-
--- | Make a complete plan, build, test and upload bundle, docs and
--- distro.
-completeBuild :: BuildType -> BuildFlags -> IO ()
-completeBuild buildType buildFlags = do
-    man <- newManager tlsManagerSettings
-    hSetBuffering stdout LineBuffering
-
-    settings@Settings {..} <- if bfLoadPlan buildFlags
-        then
-            case bfPlanFile buildFlags of
-                Nothing -> error "When loading plan, plan file must be specified"
-                Just file -> do
-                    putStrLn $ "Loading build plan from: " ++ fpToText file
-                    getSettings man buildFlags buildType $ Just file
-        else do
-            putStrLn $ "Loading settings for: " ++ tshow buildType
-            settings@Settings {..} <- getSettings man buildFlags buildType Nothing
-
-            putStrLn $ "Writing build plan to: " ++ fpToText planFile
-            encodeFile planFile plan
-
-            if bfSkipCheck buildFlags
-                then putStrLn "Skipping build plan check"
-                else do
-                    putStrLn "Checking build plan"
-                    checkBuildPlan plan
-
-            return settings
-
-    pb <- getPerformBuild buildFlags settings
-
-    if bfPreBuild buildFlags
-        then prefetchPackages pb
-        else do
-            putStrLn "Performing build"
-            performBuild pb >>= mapM_ putStrLn
-
-            putStrLn $ "Creating bundle (v2) at: " ++ fpToText bundleDest
-            createBundleV2 CreateBundleV2
-                { cb2Plan = plan
-                , cb2Type = snapshotType
-                , cb2DocsDir = pbDocDir pb
-                , cb2Dest = bundleDest
-                }
-
-            postBuild `catchAny` print
-
-            when (bfDoUpload buildFlags) $
-                finallyUpload
-                    buildFlags
-                    settings
-                    man
--}
-
-getStackageAuthToken :: IO Text
-getStackageAuthToken = do
-    mtoken <- lookupEnv "STACKAGE_AUTH_TOKEN"
-    case mtoken of
-        Nothing -> decodeUtf8 <$> readFile "/auth-token"
-        Just token -> return $ pack token
-
-{- FIXME remove
--- | The final part of the complete build process: uploading a bundle,
--- docs and a distro to hackage.
-finallyUpload :: BuildFlags
-              -> Settings -> Manager -> IO ()
-finallyUpload buildFlags settings@Settings{..} man = do
-    let server = bfServer buildFlags
-    pb <- getPerformBuild buildFlags settings
-
-    putStrLn "Uploading bundle to Stackage Server"
-
-    token <- getStackageAuthToken
-
-    res <- flip uploadBundleV2 man UploadBundleV2
-        { ub2Server = server
-        , ub2AuthToken = token
-        , ub2Bundle = bundleDest
-        }
-    putStrLn $ "New snapshot available at: " ++ res
-
--}
-
 hackageDistro
     :: FilePath -- ^ plan file
     -> Target
@@ -364,23 +259,6 @@ uploadGithub planFile docmapFile target = do
     git ["add", destFPPlan, destFPDocmap]
     git ["commit", "-m", "Checking in " ++ F.encodeString (filename $ dropExtension $ fromString destFPPlan)]
     git ["push", "origin", "HEAD:master"]
-
-upload
-    :: FilePath -- ^ bundle file
-    -> StackageServer -- ^ server URL
-    -> IO ()
-upload bundleFile server = do
-    man <- newManager tlsManagerSettings
-    putStrLn "Uploading bundle to Stackage Server"
-
-    token <- getStackageAuthToken
-
-    res <- flip uploadBundleV2 man UploadBundleV2
-        { ub2Server = server
-        , ub2AuthToken = token
-        , ub2Bundle = bundleFile
-        }
-    putStrLn $ "New snapshot available at: " ++ res
 
 uploadDocs' :: Target
             -> FilePath -- ^ bundle file
