@@ -10,6 +10,7 @@ import           Options.Applicative.Simple   (simpleOptions, simpleVersion, add
 import           Paths_stackage_curator       (version)
 import           Stackage.CompleteBuild
 import           Stackage.Curator.UploadIndex
+import           Stackage.Curator.PrepareSourceDirs (prepareSourceDirs)
 import           Stackage.DiffPlans
 import           Stackage.InstallBuild
 import           Stackage.Prelude             hiding ((<>))
@@ -41,6 +42,11 @@ main = do
                 )
         addCommand "check" "Verify that a plan is valid" id
             (checkPlan <$> (fmap Just planFile <|> pure Nothing))
+
+        addCommand "prepare-source-dirs" "Prepare source directories" id
+            (prepareSourceDirs <$> planFile)
+
+        -- FIXME this command can get removed
         addCommand "fetch" "Fetch all tarballs needed by a plan" id
             (fetch <$> planFile)
         addCommand "make-bundle" "Run a complete build and generate an upload bundle" id

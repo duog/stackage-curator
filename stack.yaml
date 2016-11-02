@@ -2,3 +2,5 @@ resolver: lts-7.3
 flags:
   stackage-curator:
     monad_unlift_0_2: true
+extra-deps:
+- typed-process-0.1.0.0

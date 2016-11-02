@@ -22,6 +22,7 @@ module Stackage.PackageIndex
     , getLatestDescriptions
     , gpdFromLBS
     , getAllCabalHashesCommit
+    , getAllCabalHashesPath
     ) where
 
 import qualified Codec.Archive.Tar                     as Tar
@@ -57,12 +58,18 @@ getPackageIndexPath = liftIO $ do
     let tarball = stackRoot </> "indices" </> "Hackage" </> "00-index.tar"
     return tarball
 
+-- | Get the location of the all-cabal-hashes repo
+getAllCabalHashesPath :: MonadIO m => m FilePath
+getAllCabalHashesPath = do
+    stackRoot <- liftIO $ getAppUserDataDirectory "stack"
+    return $ stackRoot </> "indices" </> "Hackage" </> "git-update" </> "all-cabal-hashes"
+
 -- | Get the Git commit of the all-cabal-hashes repo at its current state
 getAllCabalHashesCommit :: MonadIO m => m Text
 getAllCabalHashesCommit = liftIO $ do
     stackRoot <- getAppUserDataDirectory "stack"
-    let dir = stackRoot </> "indices" </> "Hackage" </> "git-update" </> "all-cabal-hashes"
-        cp = (proc "git" ["rev-list", "-n", "1", "current-hackage"]) { cwd = Just dir }
+    dir <- getAllCabalHashesPath
+    let cp = (proc "git" ["rev-list", "-n", "1", "current-hackage"]) { cwd = Just dir }
     withCheckedProcessCleanup cp $ \ClosedStream out ClosedStream ->
         out $$ takeWhileCE (/= 10) =$ decodeUtf8C =$ foldC
 

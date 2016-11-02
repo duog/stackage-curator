@@ -41,6 +41,7 @@ library
                        Stackage.CompleteBuild
                        Stackage.Curator.UploadDocs
                        Stackage.Curator.UploadIndex
+                       Stackage.Curator.PrepareSourceDirs
                        Stackage.ShowBuildPlan
                        Stackage.Types
   build-depends:       base >= 4 && < 5
@@ -99,6 +100,8 @@ library
                      , exceptions
                      , unordered-containers
                      , hashable
+                     , typed-process
+                     , hit
 
   if flag(monad_unlift_0_2)
     build-depends:     monad-unlift >= 0.2
