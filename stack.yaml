@@ -1,1 +1,16 @@
-resolver: nightly-2017-01-17
+resolver: nightly-2017-07-12
+compiler: ghc-8.2.0
+allow-newer: true
+extra-deps:
+- foundation-0.0.13
+- syb-0.7
+- memory-0.14.6
+- hashable-1.2.6.1
+packages:
+- .
+- location:
+    git: https://github.com/haskell/deepseq
+    commit: master
+  extra-dep: true
+- location: ../store
+system-ghc: true
