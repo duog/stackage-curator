@@ -53,8 +53,10 @@ import           Data.Time                       (Day)
 import qualified Data.Traversable                as T
 import           Data.Typeable                   (TypeRep, Typeable, typeOf)
 import           Data.Vector                     (Vector)
-import           Distribution.Package            (PackageName (PackageName))
-import           Distribution.PackageDescription (FlagName (..))
+import           Distribution.Package            (PackageName)
+import qualified Distribution.Package            as C (mkPackageName, unPackageName)
+import           Distribution.PackageDescription (FlagName)
+import qualified Distribution.PackageDescription as C (mkFlagName, unFlagName)
 import           Distribution.System             (Arch, OS)
 import qualified Distribution.Text               as DT
 import           Distribution.Version            (Version, VersionRange)
@@ -152,7 +154,7 @@ instance FromJSON BuildPlan where
         bpGithubUsers <- o .:? "github-users" .!= mempty
         bpBuildToolOverrides <- o .:? "build-tool-overrides" .!= mempty
         bpAllCabalHashesCommit <- o .:? "all-cabal-hashes-commit"
-        bpNoRevisions <- Set.map PackageName <$> o .:? "no-revisions" .!= mempty
+        bpNoRevisions <- Set.map mkPackageName <$> o .:? "no-revisions" .!= mempty
         return BuildPlan {..}
       where
         goTool = withObject "Tool" $ \o -> (,)
@@ -189,7 +191,7 @@ instance FromJSON PackagePlan where
                    . simpleParse . asText
         ppCabalFileInfo <- o .:? "cabal-file-info"
         ppGithubPings <- o .:? "github-pings" .!= mempty
-        ppUsers <- Set.map PackageName <$> (o .:? "users" .!= mempty)
+        ppUsers <- Set.map mkPackageName <$> (o .:? "users" .!= mempty)
         ppConstraints <- o .: "constraints"
         ppDesc <- o .: "description"
         ppSourceUrl <- o .:? "source-url"
@@ -240,10 +242,10 @@ data ParseFailedException = ParseFailedException TypeRep Text
 instance Exception ParseFailedException
 
 unPackageName :: PackageName -> Text
-unPackageName (PackageName str) = pack str
+unPackageName = pack . C.unPackageName
 
 mkPackageName :: Text -> PackageName
-mkPackageName = PackageName . unpack
+mkPackageName = C.mkPackageName . unpack
 
 data PackageConstraints = PackageConstraints
     { pcVersionRange     :: VersionRange
@@ -354,10 +356,10 @@ instance FromJSON SystemInfo where
                    . Map.mapKeysWith const mkPackageName
 
 unFlagName :: FlagName -> Text
-unFlagName (FlagName str) = pack str
+unFlagName = pack . C.unFlagName
 
 mkFlagName :: Text -> FlagName
-mkFlagName = FlagName . unpack
+mkFlagName = C.mkFlagName . unpack
 
 newtype Maintainer = Maintainer { unMaintainer :: Text }
     deriving (Show, Eq, Ord, Hashable, ToJSON, FromJSON, IsString)
