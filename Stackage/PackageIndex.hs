@@ -34,6 +34,11 @@ import           Distribution.Package                  (Dependency)
 import           Distribution.PackageDescription
 import           Distribution.PackageDescription.Parse (ParseResult (..),
                                                         parsePackageDescription)
+import           Distribution.Types.UnqualComponentName(UnqualComponentName)
+import           Distribution.Types.CondTree           (CondBranch)
+import           Distribution.Types.Dependency         (Dependency(..))
+import           Distribution.Types.LegacyExeDependency(LegacyExeDependency(..))
+import           Distribution.Utils.ShortText          (ShortText)
 import           Distribution.ParseUtils               (PError)
 import           Distribution.System                   (Arch, OS)
 import           Stackage.Prelude
@@ -93,14 +98,22 @@ data SimplifiedComponentInfo = SimplifiedComponentInfo
     deriving Generic
 instance Store SimplifiedComponentInfo
 
+#if MIN_VERSION_Cabal(2,0,0)
+type UnqualComponentName_Compat = UnqualComponentName
+instance Store UnqualComponentName
+instance Store ShortText
+#else
+type UnqualComponentName_Compat = String
+#endif
+
 data SimplifiedPackageDescription = SimplifiedPackageDescription
     { spdName :: PackageName
     , spdVersion :: Version
     , spdCabalFileInfo :: CabalFileInfo
     , spdCondLibrary :: Maybe (CondTree ConfVar [Dependency] SimplifiedComponentInfo)
-    , spdCondExecutables :: [(String, CondTree ConfVar [Dependency] SimplifiedComponentInfo)]
-    , spdCondTestSuites :: [(String, CondTree ConfVar [Dependency] SimplifiedComponentInfo)]
-    , spdCondBenchmarks :: [(String, CondTree ConfVar [Dependency] SimplifiedComponentInfo)]
+    , spdCondExecutables :: [(UnqualComponentName_Compat, CondTree ConfVar [Dependency] SimplifiedComponentInfo)]
+    , spdCondTestSuites :: [(UnqualComponentName_Compat, CondTree ConfVar [Dependency] SimplifiedComponentInfo)]
+    , spdCondBenchmarks :: [(UnqualComponentName_Compat, CondTree ConfVar [Dependency] SimplifiedComponentInfo)]
     , spdSetupDeps :: Maybe [Dependency]
     , spdPackageFlags :: Map FlagName Bool
     , spdGithubPings :: Set Text
@@ -113,6 +126,7 @@ deriving instance Generic Version
 #endif
 
 instance Store SimplifiedPackageDescription
+instance Store a => Store (CondBranch ConfVar [Dependency] a)
 instance Store a => Store (CondTree ConfVar [Dependency] a)
 instance Store Dependency
 instance Store v => Store (Condition v)
@@ -196,14 +210,17 @@ gpdToSpd raw gpd = SimplifiedPackageDescription
     simpleBench = helper noModules benchmarkBuildInfo
 
     helper getModules' getBI x = SimplifiedComponentInfo
-        { sciBuildTools = buildTools $ getBI x
+        { sciBuildTools = fmap (\(LegacyExeDependency package version_range) -> Dependency (mkPackageName . pack $ package) version_range) . buildTools $ getBI x
         , sciModules = getModules' x
         }
 
     noModules = const mempty
     getModules = setFromList . map display . exposedModules
 
+#if MIN_VERSION_Cabal(2,0,0)
+#else
 deriving instance Functor (CondTree v c)
+#endif
 
 mapCondTree :: (a -> b) -> CondTree v c a -> CondTree v c b
 mapCondTree = fmap

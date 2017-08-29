@@ -436,8 +436,8 @@ makeBundle
                     TargetLts x _ -> unpack $ "logs/lts-" ++ tshow x
             , pbJobs = jobs
             , pbGlobalInstall = False
-            , pbEnableTests = not skipTests
-            , pbEnableBenches = not skipBenches
+            , pbEnableTests = if not skipTests then BuildAndRun else DontBuild
+            , pbEnableBenches = if not skipBenches then BuildOnly else DontBuild
             , pbEnableHaddock = not skipHaddocks
             , pbEnableLibProfiling = enableLibraryProfiling
             , pbEnableExecDyn = enableExecutableDynamic
@@ -446,6 +446,7 @@ makeBundle
             , pbBuildHoogle = not skipHoogle
             , pbNoRebuildCabal = noRebuildCabal
             , pbCabalFromHead = cabalFromHead
+            , pbBuildCallback = \_ _ go -> go []
             }
 
     putStrLn "Performing build"

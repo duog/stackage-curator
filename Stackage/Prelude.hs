@@ -11,7 +11,7 @@ module Stackage.Prelude
 import           ClassyPrelude.Conduit           as X
 import           Data.Conduit.Process            as X
 import qualified Data.Map                        as Map
-import           Distribution.Package            as X (PackageIdentifier (..), PackageName (PackageName))
+import           Distribution.Package            as X (PackageIdentifier (..), PackageName, packageName )
 import           Distribution.PackageDescription as X (FlagName (..), GenericPackageDescription)
 import           Distribution.Version            as X (Version (..),
                                                        VersionRange)

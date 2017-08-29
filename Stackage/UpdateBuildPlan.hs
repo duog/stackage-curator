@@ -10,7 +10,7 @@ module Stackage.UpdateBuildPlan
 
 import qualified Data.Map                  as Map
 import           Distribution.Version      (anyVersion, earlierVersion,
-                                            orLaterVersion)
+                                            orLaterVersion, versionNumbers, mkVersion)
 import           Stackage.BuildConstraints
 import           Stackage.BuildPlan
 import           Stackage.PackageIndex
@@ -58,6 +58,7 @@ updateBuildConstraints BuildPlan {..} =
     bumpRange version = intersectVersionRanges
         (orLaterVersion version)
         (earlierVersion $ bumpVersion version)
-    bumpVersion (Version (x:y:_) _) = Version [x, y + 1] []
-    bumpVersion (Version [x] _) = Version [x, 1] []
-    bumpVersion (Version [] _) = assert False $ Version [1, 0] []
+    bumpVersion v = case versionNumbers v of
+      x:y:_ -> mkVersion [x, y + 1]
+      [x] -> mkVersion [x, 1]
+      [] -> assert False $ mkVersion [1, 0]

@@ -53,8 +53,8 @@ getPerformBuild plan InstallFlags{..} =
     , pbLog                = hPut stdout
     , pbJobs               = ifJobs
     , pbGlobalInstall      = ifGlobalInstall
-    , pbEnableTests        = ifEnableTests
-    , pbEnableBenches      = ifEnableBenches
+    , pbEnableTests        = if ifEnableTests then BuildAndRun else DontBuild
+    , pbEnableBenches      = if ifEnableBenches then BuildOnly else DontBuild
     , pbEnableHaddock      = ifEnableHaddock
     , pbEnableLibProfiling = ifEnableLibProfiling
     , pbEnableExecDyn      = ifEnableExecDyn
@@ -63,6 +63,7 @@ getPerformBuild plan InstallFlags{..} =
     , pbBuildHoogle        = ifBuildHoogle
     , pbNoRebuildCabal     = ifNoRebuildCabal
     , pbCabalFromHead      = False
+    , pbBuildCallback      = \_ _ go -> go []
     }
 
 -- | Install stackage from an existing build plan.

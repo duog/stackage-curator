@@ -129,7 +129,7 @@ data BuildPlan = BuildPlan
     , bpNoRevisions :: !(Set PackageName)
     -- ^ Packages where we ignore Hackage revisions
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
 instance ToJSON BuildPlan where
     toJSON BuildPlan {..} = object
@@ -172,7 +172,7 @@ data PackagePlan = PackagePlan
     , ppDesc        :: SimpleDesc
     , ppSourceUrl   :: Maybe Text
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
 instance ToJSON PackagePlan where
     toJSON PackagePlan {..} = object
@@ -264,7 +264,7 @@ data PackageConstraints = PackageConstraints
     -- ^ Hide this package after registering, useful for avoiding
     -- module name conflicts
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 instance ToJSON PackageConstraints where
     toJSON PackageConstraints {..} = object $ addMaintainer
         [ "version-range" .= display pcVersionRange
@@ -332,7 +332,7 @@ data SystemInfo = SystemInfo
     , siCorePackages    :: Map PackageName Version
     , siCoreExecutables :: Set ExeName
     }
-    deriving (Show, Eq, Ord)
+    deriving (Show, Eq, Ord, Generic)
 instance ToJSON SystemInfo where
     toJSON SystemInfo {..} = object
         [ "ghc-version" .= display siGhcVersion
@@ -387,7 +387,7 @@ data SimpleDesc = SimpleDesc
     -- ^ minimum acceptable Cabal version
     , sdSetupDeps    :: Maybe (Set PackageName)
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 instance Monoid SimpleDesc where
     mempty = SimpleDesc mempty mempty mempty mempty mempty mempty
     mappend (SimpleDesc a b c d e f) (SimpleDesc w x y z e' f') = SimpleDesc

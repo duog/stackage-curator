@@ -45,9 +45,9 @@ import qualified Data.Text                   as T
 import           Data.Text.Read              (decimal)
 import           Data.Time                   (Day)
 import           Data.Typeable               (Typeable)
-import           Data.Version                (Version)
 import           Data.Yaml                   (decodeFileEither)
 import           Distribution.Package        (PackageName)
+import           Distribution.Version        (Version)
 import           Network.HTTP.Client         (Manager, brRead, httpLbs,
                                               newManager, parseUrlThrow,
                                               responseBody, withResponse)

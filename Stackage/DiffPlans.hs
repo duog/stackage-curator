@@ -11,10 +11,10 @@ import           Network.HTTP.Client
 import           Network.HTTP.Simple (httpSink)
 import           Network.HTTP.Client.TLS (tlsManagerSettings)
 import           Stackage.Prelude
-
 import           Data.Maybe
 import           Lucid
 import           System.Directory
+import           Distribution.Version (versionNumbers)
 
 data Change = Added | Deleted | MajorBump | MinorBump | Unchanged
     deriving (Show, Eq, Ord)
@@ -76,8 +76,8 @@ diffPlans oldFP newFP diffsOnly useColor False asHtml = do
                   (singletonMap name $ (display x, Just $ display y))
 
 isMajor :: Version -> Version -> Bool
-isMajor (Version old _) (Version new _) =
-    toPair old /= toPair new
+isMajor old new =
+    toPair (versionNumbers old) /= toPair (versionNumbers new)
   where
     toPair []      = (0, 0)
     toPair [i]     = (i, 0)

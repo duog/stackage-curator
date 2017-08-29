@@ -24,6 +24,8 @@ import           Distribution.Compiler           (CompilerFlavor)
 import           Distribution.Package            (Dependency (..))
 import           Distribution.PackageDescription
 import           Distribution.System             (Arch, OS)
+import           Distribution.Types.UnqualComponentName
+import           Distribution.Types.CondTree
 import           Stackage.PackageIndex
 import           Stackage.Prelude
 
@@ -37,7 +39,7 @@ toSimpleDesc cc spd = execWriterT $ do
     forM_ (spdCondLibrary spd) $ tellTree cc CompLibrary
     forM_ (spdCondExecutables spd) $ tellTree cc CompExecutable . snd
     tell mempty { sdProvidedExes = setFromList
-                                 $ map (fromString . fst)
+                                 $ map (fromString . unUnqualComponentName . fst)
                                  $ spdCondExecutables spd
                 , sdCabalVersion = Option $ Max <$> spdCabalVersion spd
                 , sdPackages = unionsWith (<>) $ maybe [] (map
@@ -82,7 +84,7 @@ tellTree cc component =
                         }
             , sdModules = sciModules dat
             }
-        forM_ comps $ \(cond, ontrue, onfalse) -> do
+        forM_ comps $ \(CondBranch cond ontrue onfalse) -> do
             b <- checkCond cc cond
             if b
                 then loop ontrue

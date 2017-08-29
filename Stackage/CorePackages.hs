@@ -18,7 +18,8 @@ import           System.Directory           (findExecutable)
 import           System.FilePath            (takeDirectory, takeFileName)
 
 addDeepDepends :: PackageName -> StateT (Map PackageName Version) IO ()
-addDeepDepends name@(PackageName name') = do
+addDeepDepends name = do
+    let name' = unpack $ unPackageName name
     m <- get
     case lookup name m of
         Just _ -> return ()
@@ -104,7 +105,7 @@ addDeepDepends name@(PackageName name') = do
 -- Precondition: GHC global package database has only core packages, and GHC
 -- ships with just a single version of each packages.
 getCorePackages :: IO (Map PackageName Version)
-getCorePackages = flip execStateT mempty $ mapM_ (addDeepDepends . PackageName)
+getCorePackages = flip execStateT mempty $ mapM_ (addDeepDepends . mkPackageName . pack)
     [ "ghc"
     {-
     , "haskell2010"

@@ -7,9 +7,12 @@
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
 module Stackage.PerformBuild
     ( performBuild
     , PerformBuild (..)
+    , BuildAndRun (..)
+    , PBBuildType (..)
     , BuildException (..)
     , pbDocDir
     , sdistFilePath
@@ -22,11 +25,13 @@ import qualified Data.ByteString             as S
 import           Data.Generics               (mkT, everywhere)
 import qualified Data.Map                    as Map
 import           Data.NonNull                (fromNullable)
+import           Data.Aeson (ToJSON, FromJSON)
 import           Distribution.PackageDescription (buildType, packageDescription, BuildType (Simple),
                                                  condTestSuites)
 import           Distribution.Package        (Dependency (..))
 import           Distribution.PackageDescription.PrettyPrint (writeGenericPackageDescription)
 import           Distribution.Version        (anyVersion)
+import           Distribution.Types.UnqualComponentName
 import           Filesystem                  (canonicalizePath, createTree,
                                               getWorkingDirectory,
                                               removeTree, rename, removeFile)
@@ -56,8 +61,8 @@ instance Show BuildException where
     show (BuildException m warnings) =
         unlines $ "" : "" : "" : map go (mapToList m) ++ map unpack warnings
       where
-        go (PackageName name, bf) = concat
-            [ name
+        go (pn, bf) = concat
+            [ unpack $ unPackageName pn
             , ": "
             , take 500 $ show bf
             ]
@@ -70,6 +75,9 @@ data BuildFailure = DependencyFailed PackageName
     deriving (Show, Typeable)
 instance Exception BuildFailure
 
+data BuildAndRun = DontBuild | BuildOnly | BuildAndRun deriving (Eq, Show)
+data PBBuildType = BT_Library | BT_Tests | BT_Benchmarks deriving (Show, Generic, ToJSON, FromJSON)
+
 data PerformBuild = PerformBuild
     { pbPlan          :: BuildPlan
     , pbInstallDest   :: FilePath
@@ -78,8 +86,8 @@ data PerformBuild = PerformBuild
     , pbJobs          :: Int
     , pbGlobalInstall :: Bool
     -- ^ Register packages in the global database
-    , pbEnableTests        :: Bool
-    , pbEnableBenches      :: Bool
+    , pbEnableTests        :: BuildAndRun
+    , pbEnableBenches      :: BuildAndRun
     , pbEnableHaddock      :: Bool
     , pbEnableLibProfiling :: Bool
     , pbEnableExecDyn      :: Bool
@@ -96,6 +104,7 @@ data PerformBuild = PerformBuild
     , pbCabalFromHead      :: !Bool
     -- ^ Used for testing Cabal itself: grab the most recent version of Cabal
     -- from Github master
+    , pbBuildCallback :: Text -> PBBuildType -> ([Text] -> IO ()) -> IO ()
     }
 
 data PackageInfo = PackageInfo
@@ -146,7 +155,7 @@ waitForDeps toolMap packageMap activeComps bp pi action = do
     -- Since we build every package using the Cabal library, it's an implicit
     -- dependency of everything
     addCabal :: Set PackageName -> Set PackageName
-    addCabal = insertSet (PackageName "Cabal")
+    addCabal = insertSet (mkPackageName "Cabal")
 
 withCounter :: TVar Int -> IO a -> IO a
 withCounter counter = bracket_
@@ -304,7 +313,7 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
     testComps = insertSet CompTestSuite libComps
     benchComps = insertSet CompBenchmark libComps
 
-    thisIsCabal = pname == PackageName "Cabal" -- cue Sparta joke
+    thisIsCabal = pname == mkPackageName "Cabal" -- cue Sparta joke
 
     inner
       | thisIsCabal && pbNoRebuildCabal =
@@ -494,7 +503,6 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
                 let run a b = do when pbVerbose $ log' (unwords (a : b))
                                  runIn childDir getOutH a b
                     cabal = setup run
-
                 unlessM (readIORef isConfiged) $ do
                     log' $ "Configuring " ++ namever
                     cabal $ "configure" : configArgs
@@ -515,10 +523,11 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
                     return True
                 | otherwise -> return False
         when toBuild $ withConfiged $ \childDir cabal -> do
+            let cabal_with_callback xs = pbBuildCallback (unPackageName $ piName sbPackageInfo) BT_Library $ \ys -> cabal (xs ++ ys)
             deletePreviousResults pb pident
 
             log' $ "Building " ++ namever
-            cabal ["build"]
+            cabal_with_callback ["build"]
 
             log' $ "Copying/registering " ++ namever
             cabal ["copy"]
@@ -602,69 +611,71 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
 
     runTests withUnpacked = wf testOut $ \getOutH -> do
         prevTestResult <- getPreviousResult pb Test pident
-        let needTest = pbEnableTests
+        let needTest = (pbEnableTests /= DontBuild)
                     && checkPrevResult prevTestResult pcTests
                     && not pcSkipBuild
         when needTest $ withUnpacked $ \gpd childDir -> do
             let run = runIn childDir getOutH
                 cabal = setup run
-
+                cabal_with_callback xs = pbBuildCallback (unPackageName $ piName sbPackageInfo) BT_Tests $ \ys -> cabal (xs ++ ys)
             log' $ "Test configure " ++ namever
             cabal $ "configure" : "--enable-tests" : configArgs
 
             eres <- tryAny $ do
                 log' $ "Test build " ++ namever
-                cabal ["build"]
+                cabal_with_callback ["build"]
+                when (pbEnableTests == BuildAndRun) $ do
+                  let tests = map fst $ condTestSuites gpd
+                  forM_ tests $ \test -> do
+                      let test_str = unUnqualComponentName test
+                          test_txt = pack test_str
+                      log' $ concat
+                          [ "Test run "
+                          , namever
+                          , " ("
+                          , test_txt
+                          , ")"
+                          ]
+                      let exe = "dist/build" </> test_str </> test_str
 
-                let tests = map fst $ condTestSuites gpd
-                forM_ tests $ \test -> do
-                    log' $ concat
-                        [ "Test run "
-                        , namever
-                        , " ("
-                        , pack test
-                        , ")"
-                        ]
-                    let exe = "dist/build" </> test </> test
-
-                    exists <- liftIO $ doesFileExist $ childDir </> exe
-                    if exists
-                        then do
-                            mres <- timeout maximumTestSuiteTime $ run (pack exe) []
-                            case mres of
-                                Just () -> return ()
-                                Nothing -> error $ concat
-                                    [ "Test suite timed out: "
-                                    , unpack namever
-                                    , ":"
-                                    , test
-                                    ]
-                        else do
-                            outH <- getOutH
-                            hPut outH $ encodeUtf8 $ asText $ "Test suite not built: " ++ pack test
-
+                      exists <- liftIO $ doesFileExist $ childDir </> exe
+                      if exists
+                          then do
+                              mres <- timeout maximumTestSuiteTime $ run (pack exe) []
+                              case mres of
+                                  Just () -> return ()
+                                  Nothing -> error $ concat
+                                      [ "Test suite timed out: "
+                                      , unpack namever
+                                      , ":"
+                                      , test_str
+                                      ]
+                          else do
+                              outH <- getOutH
+                              hPut outH $ encodeUtf8 $ asText $ "Test suite not built: " ++ test_txt
+            -- maybe this is wrong if we were pbEnableTests == BuildOnly
             savePreviousResult pb Test pident $ either (const False) (const True) eres
             case (eres, pcTests) of
                 (Left e, ExpectSuccess) -> throwM e
-                (Right (), ExpectFailure) -> warn $ namever ++ ": unexpected test success"
+                (Right (), ExpectFailure) | pbEnableTests /= BuildOnly -> warn $ namever ++ ": unexpected test success"
                 _ -> return ()
 
     buildBenches withUnpacked = wf benchOut $ \getOutH -> do
         prevBenchResult <- getPreviousResult pb Bench pident
-        let needTest = pbEnableBenches
+        let needTest = (pbEnableBenches /= DontBuild)
                     && checkPrevResult prevBenchResult pcBenches
                     && not pcSkipBuild
         when needTest $ withUnpacked $ \_gpd childDir -> do
             let run = runIn childDir getOutH
                 cabal = setup run
+                cabal_with_callback xs = pbBuildCallback (unPackageName $ piName sbPackageInfo) BT_Benchmarks $ \ys -> cabal (xs ++ ys)
 
             log' $ "Benchmark configure " ++ namever
             cabal $ "configure" : "--enable-benchmarks" : configArgs
 
             eres <- tryAny $ do
                 log' $ "Benchmark build " ++ namever
-                cabal ["build"]
-
+                cabal_with_callback ["build"]
             savePreviousResult pb Bench pident $ either (const False) (const True) eres
             case (eres, pcBenches) of
                 (Left e, ExpectSuccess) -> throwM e
@@ -713,7 +724,7 @@ renameOrCopy src dest =
 
 copyBuiltInHaddocks :: FilePath -> IO ()
 copyBuiltInHaddocks docdir = do
-    mghc <- findExecutable "ghc"
+    mghc <- findExecutable "runghc"
     case mghc of
         Nothing -> error "GHC not found on PATH"
         Just ghc -> do
@@ -862,8 +873,8 @@ getHaddockFiles pb =
     go dir =
         case simpleParse nameVerText of
             Nothing -> return mempty
-            Just (PackageIdentifier (PackageName name) _) -> do
-                let fp = dir </> name <.> "haddock"
+            Just (PackageIdentifier pn _) -> do
+                let fp = dir </> unpack (unPackageName pn) <.> "haddock"
                 exists <- doesFileExist fp
                 return $ if exists
                     then singletonMap nameVerText fp
