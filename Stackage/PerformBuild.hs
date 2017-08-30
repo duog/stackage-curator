@@ -7,7 +7,7 @@
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric, DeriveAnyClass, RankNTypes #-}
 module Stackage.PerformBuild
     ( performBuild
     , PerformBuild (..)
@@ -104,7 +104,9 @@ data PerformBuild = PerformBuild
     , pbCabalFromHead      :: !Bool
     -- ^ Used for testing Cabal itself: grab the most recent version of Cabal
     -- from Github master
-    , pbBuildCallback :: Text -> PBBuildType -> ([Text] -> IO ()) -> IO ()
+    , pbGhcCallback :: Text -> PBBuildType -> ([Text] -> IO ()) -> IO ()
+    , pbSetupCallback :: Text -> PBBuildType -> Maybe Text -> ([Text] -> IO ()) -> IO ()
+    , pbWaitOnDep :: forall a. IO a -> IO a
     }
 
 data PackageInfo = PackageInfo
@@ -118,10 +120,11 @@ waitForDeps :: Map ExeName (Set PackageName)
             -> Set Component
             -> BuildPlan
             -> PackageInfo
+            -> (forall a. IO a -> IO a)
             -> IO a
             -> IO a
-waitForDeps toolMap packageMap activeComps bp pi action = do
-    atomically $ do
+waitForDeps toolMap packageMap activeComps bp pi waiting_on_deps action = do
+    waiting_on_deps $ atomically $ do
         mapM_ checkPackage $ addCabal $ Map.keysSet $ filterUnused $ sdPackages $ ppDesc $ piPlan pi
         forM_ (Map.keys $ filterUnused $ sdTools $ ppDesc $ piPlan pi) $ \exe -> do
             case lookup exe toolMap >>= fromNullable . map checkPackage . setToList of
@@ -178,8 +181,6 @@ pbDataDir pb = pbInstallDest pb </> "share"
 pbLibexecDir pb = pbInstallDest pb </> "libexec"
 pbSysconfDir pb = pbInstallDest pb </> "etc"
 pbDocDir pb = pbInstallDest pb </> "doc"
-
--- | Directory keeping previous result info
 pbPrevResDir :: PerformBuild -> FilePath
 pbPrevResDir pb = pbInstallDest pb </> "prevres"
 
@@ -320,7 +321,7 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
             atomically $ putTMVar (piResult sbPackageInfo) True
       | otherwise = do
         let wfd comps =
-                waitForDeps sbToolMap sbPackageMap comps pbPlan sbPackageInfo
+                waitForDeps sbToolMap sbPackageMap comps pbPlan sbPackageInfo pbWaitOnDep
                 . withTSem sbSem
         withUnpacked <- wfd libComps buildLibrary
 
@@ -411,10 +412,16 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
 
         inner' getH `finally` cleanup
 
-    setup run args = do
-        run "ghc" $ runghcArgs ["Setup"]
-        run "./Setup" args
+    setup build_type run args1 = do
+        pbGhcCallback package_name build_type $
+          \args -> run "ghc" $ runghcArgs ["Setup"] ++ args
+        pbSetupCallback package_name build_type command $
+          \args2 -> run "./Setup" $ args1 ++ args2
       where
+        package_name = unPackageName $ piName sbPackageInfo
+        command = case args1 of
+          [] -> Nothing
+          c : _ -> Just c
         runghcArgs :: [Text] -> [Text]
         runghcArgs rest =
             "-clear-package-db"
@@ -502,7 +509,7 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
         let withConfiged inner' = withUnpacked $ \_gpd childDir -> do
                 let run a b = do when pbVerbose $ log' (unwords (a : b))
                                  runIn childDir getOutH a b
-                    cabal = setup run
+                    cabal = setup BT_Library run
                 unlessM (readIORef isConfiged) $ do
                     log' $ "Configuring " ++ namever
                     cabal $ "configure" : configArgs
@@ -523,11 +530,10 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
                     return True
                 | otherwise -> return False
         when toBuild $ withConfiged $ \childDir cabal -> do
-            let cabal_with_callback xs = pbBuildCallback (unPackageName $ piName sbPackageInfo) BT_Library $ \ys -> cabal (xs ++ ys)
             deletePreviousResults pb pident
 
             log' $ "Building " ++ namever
-            cabal_with_callback ["build"]
+            cabal ["build"]
 
             log' $ "Copying/registering " ++ namever
             cabal ["copy"]
@@ -616,14 +622,13 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
                     && not pcSkipBuild
         when needTest $ withUnpacked $ \gpd childDir -> do
             let run = runIn childDir getOutH
-                cabal = setup run
-                cabal_with_callback xs = pbBuildCallback (unPackageName $ piName sbPackageInfo) BT_Tests $ \ys -> cabal (xs ++ ys)
+                cabal = setup BT_Tests run
             log' $ "Test configure " ++ namever
             cabal $ "configure" : "--enable-tests" : configArgs
 
             eres <- tryAny $ do
                 log' $ "Test build " ++ namever
-                cabal_with_callback ["build"]
+                cabal ["build"]
                 when (pbEnableTests == BuildAndRun) $ do
                   let tests = map fst $ condTestSuites gpd
                   forM_ tests $ \test -> do
@@ -667,15 +672,14 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
                     && not pcSkipBuild
         when needTest $ withUnpacked $ \_gpd childDir -> do
             let run = runIn childDir getOutH
-                cabal = setup run
-                cabal_with_callback xs = pbBuildCallback (unPackageName $ piName sbPackageInfo) BT_Benchmarks $ \ys -> cabal (xs ++ ys)
+                cabal = setup BT_Benchmarks run
 
             log' $ "Benchmark configure " ++ namever
             cabal $ "configure" : "--enable-benchmarks" : configArgs
 
             eres <- tryAny $ do
                 log' $ "Benchmark build " ++ namever
-                cabal_with_callback ["build"]
+                cabal ["build"]
             savePreviousResult pb Bench pident $ either (const False) (const True) eres
             case (eres, pcBenches) of
                 (Left e, ExpectSuccess) -> throwM e

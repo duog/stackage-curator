@@ -63,7 +63,9 @@ getPerformBuild plan InstallFlags{..} =
     , pbBuildHoogle        = ifBuildHoogle
     , pbNoRebuildCabal     = ifNoRebuildCabal
     , pbCabalFromHead      = False
-    , pbBuildCallback      = \_ _ go -> go []
+    , pbGhcCallback = \_ _ go -> go []
+    , pbSetupCallback = \_ _ _ go -> go []
+    , pbWaitOnDep = id
     }
 
 -- | Install stackage from an existing build plan.

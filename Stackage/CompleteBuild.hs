@@ -446,7 +446,9 @@ makeBundle
             , pbBuildHoogle = not skipHoogle
             , pbNoRebuildCabal = noRebuildCabal
             , pbCabalFromHead = cabalFromHead
-            , pbBuildCallback = \_ _ go -> go []
+            , pbGhcCallback = \_ _ go -> go []
+            , pbSetupCallback = \_ _ _ go -> go []
+            , pbWaitOnDep = id
             }
 
     putStrLn "Performing build"
