@@ -98,6 +98,7 @@ data PerformBuild = PerformBuild
     , pbCabalFromHead      :: !Bool
     -- ^ Used for testing Cabal itself: grab the most recent version of Cabal
     -- from Github master
+    , pbPatchDir :: !(Maybe FilePath)
     }
 
 data PackageInfo = PackageInfo
@@ -488,7 +489,9 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
                                 else do
                                     log' $ "Unpacking " ++ nameverrevhash
                                     case ppSourceUrl $ piPlan sbPackageInfo of
-                                        Nothing -> runParent getOutH "stack" ["unpack", nameverrevhash]
+                                        Nothing -> do
+                                          runParent getOutH "stack" ["unpack", nameverrevhash]
+                                          tryApplyingPatch pbPatchDir namever (runParent getOutH)
                                         Just url -> unpackFromURL sbBuildDir url
                                     return $ sbBuildDir </> unpack namever
 
@@ -1118,3 +1121,11 @@ calculatePackageMap pb registered prevRes allInfos =
                     return $ singletonMap name info
                 Just BSPartialBuild -> return $ singletonMap name info
                 Just NoBuild -> return mempty
+
+tryApplyingPatch :: Maybe FilePath -> Text -> (Text -> [Text] -> IO ()) -> IO ()
+tryApplyingPatch mb_patchdir namever run = maybe (return ()) go mb_patchdir
+  where
+    go patchdir = do
+      let patch_file = patchdir </> unpack namever <.> "patch"
+      patch_exists <- doesFileExist patch_file
+      when patch_exists $ run "patch" ["-p1", "-i", pack patch_file, "-d", namever]

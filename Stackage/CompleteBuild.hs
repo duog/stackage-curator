@@ -447,6 +447,7 @@ makeBundle
             , pbBuildHoogle = not skipHoogle
             , pbNoRebuildCabal = noRebuildCabal
             , pbCabalFromHead = cabalFromHead
+            , pbPatchDir = Nothing
             }
 
     putStrLn "Performing build"

@@ -161,7 +161,10 @@ main = do
             (switch
                  (long "skip-hoogle" <>
                   help "Skip generating Hoogle input files")) <*>
-        noRebuildCabal
+        noRebuildCabal <*>
+        patchDir
+
+    patchDir = optional $ strOption $ long "patch-dir" <> help "Directory to look for git patch files of the form package-version.patch"
 
     noRebuildCabal =
         switch
