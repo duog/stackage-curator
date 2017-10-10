@@ -448,6 +448,7 @@ makeBundle
             , pbNoRebuildCabal = noRebuildCabal
             , pbCabalFromHead = cabalFromHead
             , pbPatchDir = Nothing
+            , pbEnableRunTests = True
             }
 
     putStrLn "Performing build"

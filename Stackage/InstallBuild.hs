@@ -38,6 +38,7 @@ data InstallFlags = InstallFlags
     , ifBuildHoogle        :: !Bool
     , ifNoRebuildCabal     :: !Bool
     , ifPatchDir           :: !(Maybe FilePath)
+    , ifEnableRunTests     :: !Bool
     } deriving (Show)
 
 -- | Source for build plan.
@@ -65,6 +66,7 @@ getPerformBuild plan InstallFlags{..} =
     , pbNoRebuildCabal     = ifNoRebuildCabal
     , pbCabalFromHead      = False
     , pbPatchDir           = ifPatchDir
+    , pbEnableRunTests     = ifEnableRunTests
     }
 
 -- | Install stackage from an existing build plan.

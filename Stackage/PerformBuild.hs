@@ -81,6 +81,7 @@ data PerformBuild = PerformBuild
     , pbGlobalInstall :: Bool
     -- ^ Register packages in the global database
     , pbEnableTests        :: Bool
+    , pbEnableRunTests     :: !Bool
     , pbEnableBenches      :: Bool
     , pbEnableHaddock      :: Bool
     , pbEnableLibProfiling :: Bool
@@ -628,32 +629,33 @@ singleBuild pb@PerformBuild {..} registeredPackages SingleBuild {..} = do
                 log' $ "Test build " ++ namever
                 cabal ["build"]
 
-                let tests = map (unUnqualComponentName . fst) $ condTestSuites gpd
-                forM_ tests $ \test -> do
-                    log' $ concat
-                        [ "Test run "
-                        , namever
-                        , " ("
-                        , pack test
-                        , ")"
-                        ]
-                    let exe = "dist/build" </> test </> test
+                when pbEnableRunTests $ do
+                  let tests = map (unUnqualComponentName . fst) $ condTestSuites gpd
+                  forM_ tests $ \test -> do
+                      log' $ concat
+                          [ "Test run "
+                          , namever
+                          , " ("
+                          , pack test
+                          , ")"
+                          ]
+                      let exe = "dist/build" </> test </> test
 
-                    exists <- liftIO $ doesFileExist $ childDir </> exe
-                    if exists
-                        then do
-                            mres <- timeout maximumTestSuiteTime $ run (pack exe) []
-                            case mres of
-                                Just () -> return ()
-                                Nothing -> error $ concat
-                                    [ "Test suite timed out: "
-                                    , unpack namever
-                                    , ":"
-                                    , test
-                                    ]
-                        else do
-                            outH <- getOutH
-                            hPut outH $ encodeUtf8 $ asText $ "Test suite not built: " ++ pack test
+                      exists <- liftIO $ doesFileExist $ childDir </> exe
+                      if exists
+                          then do
+                              mres <- timeout maximumTestSuiteTime $ run (pack exe) []
+                              case mres of
+                                  Just () -> return ()
+                                  Nothing -> error $ concat
+                                      [ "Test suite timed out: "
+                                      , unpack namever
+                                      , ":"
+                                      , test
+                                      ]
+                          else do
+                              outH <- getOutH
+                              hPut outH $ encodeUtf8 $ asText $ "Test suite not built: " ++ pack test
 
             savePreviousResult pb Test pident $ either (const False) (const True) eres
             case (eres, pcTests) of

@@ -162,7 +162,8 @@ main = do
                  (long "skip-hoogle" <>
                   help "Skip generating Hoogle input files")) <*>
         noRebuildCabal <*>
-        patchDir
+        patchDir <*>
+        switch (long "run-tests" <> help "Run test suites")
 
     patchDir = optional $ strOption $ long "patch-dir" <> help "Directory to look for git patch files of the form package-version.patch"
 
